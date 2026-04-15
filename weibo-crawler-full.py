@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""微博全量抓取 — 逐条落盘，支持断点续抓"""
 
 import json, subprocess, re, os, signal, time, html, random, logging, argparse
 from datetime import datetime

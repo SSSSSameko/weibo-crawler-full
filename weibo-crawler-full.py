@@ -5,7 +5,7 @@ import json, subprocess, re, os, signal, time, html, random, logging, argparse
 from datetime import datetime
 from pathlib import Path
 
-# ---- 配置 ----
+# - 配置
 TARGET_UID = " "
 OUTPUT_DIR = "weibo_data"
 COOKIE = ' '
@@ -19,7 +19,7 @@ MAX_CMT_PAGES = 30
 DELAY = (3, 6)
 CMT_DELAY = (2, 4)
 
-# ---- logging ----
+# - logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -30,7 +30,7 @@ log = logging.getLogger("weibo")
 TAG_RE = re.compile(r"<[^>]+>")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
-# ---- graceful shutdown ----
+# - graceful shutdown
 _stop = False
 def _on_signal(sig, _frame):
     global _stop
@@ -89,7 +89,7 @@ def fetch(url, cookie, timeout=30):
         return None, 0
 
 
-# ---- 断点：从已有 JSONL 提取已抓 ID ----
+# - 断点：从已有 JSONL 提取已抓 ID
 def load_done(path):
     done = set()
     if not path.exists():
@@ -109,7 +109,7 @@ def load_done(path):
     return done
 
 
-# ---- 微博分页 ----
+# - 微博分页
 def get_page(uid, cookie, page):
     url = f"https://weibo.com/ajax/statuses/mymblog?uid={uid}&count={PAGE_SIZE}&page={page}"
     sleep_rand(*DELAY)
@@ -127,7 +127,7 @@ def get_page(uid, cookie, page):
     return data.get("data", {}).get("list", []), False
 
 
-# ---- 长微博 ----
+# - 长微博
 def get_long(wid, cookie):
     data, code = fetch(f"https://weibo.com/ajax/statuses/longtext?id={wid}", cookie)
     if code == 200 and data:
@@ -135,7 +135,7 @@ def get_long(wid, cookie):
     return None
 
 
-# ---- 评论（含二级回复） ----
+# - 评论（含二级回复）
 def get_comments(uid, wid, cookie):
     results = []
     max_id = 0
@@ -181,7 +181,7 @@ def get_comments(uid, wid, cookie):
     return results
 
 
-# ---- 落盘 ----
+# - cun
 def dump_jsonl(path, item):
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(item, ensure_ascii=False) + "\n")
@@ -206,8 +206,7 @@ def dump_txt(path, idx, w):
         f.flush()
         os.fsync(f.fileno())
 
-
-# ---- main ----
+# - main
 def main():
     cookie = COOKIE
     out = Path(OUTPUT_DIR)
@@ -238,7 +237,7 @@ def main():
             f.write(f"开始: {datetime.now():%Y-%m-%d %H:%M:%S}\n")
             f.write("=" * 60 + "\n\n")
 
-    # 开干
+    # 1
     log.info("开始抓微博...")
     page = 0
     new = 0
@@ -294,7 +293,7 @@ def main():
                         "user": rt.get("user", {}).get("screen_name", ""),
                     }
 
-                # 长微博展开
+                # 长微博
                 if item["is_long"] and not SKIP_LONGTEXT:
                     full = get_long(wid, cookie)
                     if full and len(full) > len(item["text_raw"]):
@@ -309,7 +308,7 @@ def main():
                     total_cmt += len(cmts)
                     log.info("  %s: %d条评论", wid, len(cmts))
 
-                # 写盘
+                # 写
                 dump_jsonl(jsonl_p, item)
                 dump_txt(txt_p, new + 1, item)
                 done.add(wid)
@@ -340,9 +339,9 @@ def main():
 
     log.info("=" * 50)
     if _stop:
-        log.info("⚠ 被中断了，已存 %d 条(新:%d 跳过:%d)，再跑一次就能续", new+skipped, new, skipped)
+        log.info("被中断了，已存 %d 条(新:%d 跳过:%d)，再跑一次就能续", new+skipped, new, skipped)
     else:
-        log.info("✅ 搞定！微博 %d 条(新:%d 跳过:%d) 评论 %d 条", new+skipped, new, skipped, total_cmt)
+        log.info(" 搞定！微博 %d 条(新:%d 跳过:%d) 评论 %d 条", new+skipped, new, skipped, total_cmt)
     log.info("  JSONL: %s (%s)", jsonl_p, fmt_size(jsonl_p.stat().st_size) if jsonl_p.exists() else "?")
     log.info("  TXT:   %s (%s)", txt_p, fmt_size(txt_p.stat().st_size) if txt_p.exists() else "?")
     log.info("=" * 50)

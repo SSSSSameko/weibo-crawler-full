@@ -150,8 +150,16 @@ def get_replies(uid, wid, cid, cookie):
         if max_id:
             url += f"&max_id={max_id}"
         data, code = fetch(url, cookie)
-        if code != 200:
+        if code == 403:
+            log.error("评论403，cookie过期")
             break
+        if code != 200:
+            log.warning("评论HTTP %d，等30秒重试", code)
+            sleep_rand(30, 60)
+            data, code = fetch(url, cookie)
+            if code != 200:
+                log.error("评论重试失败%d，跳过", code)
+                break
         items = (data or {}).get("data", [])
         if not items:
             break
@@ -193,8 +201,16 @@ def get_comments(uid, wid, cookie):
         if max_id:
             url += f"&max_id={max_id}"
         data, code = fetch(url, cookie)
-        if code != 200:
+        if code == 403:
+            log.error("评论403，cookie过期")
             break
+        if code != 200:
+            log.warning("评论HTTP %d，等30秒重试", code)
+            sleep_rand(30, 60)
+            data, code = fetch(url, cookie)
+            if code != 200:
+                log.error("评论重试失败%d，跳过", code)
+                break
         cmts = (data or {}).get("data", [])
         if not cmts:
             log.info("  评论第%d页: 空，结束", pg)

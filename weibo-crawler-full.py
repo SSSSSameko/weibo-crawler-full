@@ -195,11 +195,12 @@ def get_comments(uid, wid, cookie):
         cmts = (data or {}).get("data", [])
         if not cmts:
             break
-        # 调试：打印第一条评论的原始结构
-        if pg == 0 and cmts:
+        # 调试：打印第一条API响应结构
+        if pg == 1 and cmts:
+            log.info("[调试] has_more=%s max_id=%s", data.get("has_more"), data.get("max_id"))
             log.info("[调试] 评论原始字段: %s", list(cmts[0].keys()))
             log.info("[调试] user字段: %s", cmts[0].get("user"))
-            log.info("[调试] reply_comment: %s", cmts[0].get("reply_comment"))
+            log.info("[调试] reply_user: %s", cmts[0].get("reply_user"))
         for c in cmts:
             cmt_user = c.get("user") or c.get("reply_user") or {}
             item = {

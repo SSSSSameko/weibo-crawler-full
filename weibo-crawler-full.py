@@ -167,33 +167,64 @@ def get_long(wid, cookie):
     return None
 
 
-# ---- 二级回复分页抓取 ----
+# ---- 二级回复分页抓取 (移动端API) ----
+def fetch_mobile(url, cookie, timeout=30):
+    """移动端微博API请求"""
+    cmd = [
+        "curl", "-s", "-m", str(timeout),
+        "-w", "\n__HTTP_CODE__%{http_code}",
+        url,
+        "-H", "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "-H", f"Cookie: {cookie}",
+        "-H", f"Referer: https://m.weibo.cn/detail/{re.search(r'id=(\d+)', url).group(1) if re.search(r'id=(\d+)', url) else ''}",
+        "-H", "Accept: application/json, text/plain, */*",
+        "-H", "X-Requested-With: XMLHttpRequest",
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           timeout=timeout + 5)
+        out = r.stdout
+        if "__HTTP_CODE__" in out:
+            body, code_s = out.rsplit("__HTTP_CODE__", 1)
+            code = int(code_s.strip())
+        else:
+            body, code = out, 0
+        return (json.loads(body), code) if code == 200 else (None, code)
+    except Exception as e:
+        log.error("curl炸了: %s", e)
+        return None, 0
+
+
 def get_replies(uid, wid, cid, cookie, top_cids=None):
+    """通过移动端API获取二级评论回复"""
     replies = []
     seen = set()
-    max_id = 0
+    page = 0
     while True:
         if _stop:
             break
-        url = (f"https://weibo.com/ajax/statuses/buildComments"
-               f"?is_show_bulletin=2&is_mix=0&id={wid}"
-               f"&comment_type=0&count={CMT_PAGE_SIZE}&uid={uid}"
-               f"&root_comment={cid}")
-        if max_id:
-            url += f"&max_id={max_id}&end_id={max_id}"
-        log.info("  评论URL: %s", url)
-        data, code = fetch(url, cookie)
+        page += 1
+        url = (f"https://m.weibo.cn/api/comments/show"
+               f"?id={wid}&cid={cid}&page={page}")
+        log.info("  二级回复URL: %s", url)
+        raw, code = fetch_mobile(url, cookie)
         if code == 403:
-            log.error("评论403，cookie过期")
+            log.error("二级回复403，cookie过期")
             break
         if code != 200:
-            log.warning("评论HTTP %d，等30秒重试", code)
+            log.warning("二级回复HTTP %d，等30秒重试", code)
             sleep_rand(30, 60)
-            data, code = fetch(url, cookie)
+            raw, code = fetch_mobile(url, cookie)
             if code != 200:
-                log.error("评论重试失败%d，跳过", code)
+                log.error("二级回复重试失败%d，跳过", code)
                 break
-        items = (data or {}).get("data", [])
+        # 移动端API结构: {"ok": 1, "data": {"data": [...], "total_number": N, "max": M}}
+        d = (raw or {}).get("data", {})
+        if isinstance(d, list):
+            items = d
+        else:
+            items = d.get("data", [])
         if not items:
             break
         for rc in items:
@@ -201,27 +232,24 @@ def get_replies(uid, wid, cid, cookie, top_cids=None):
             if rid in seen:
                 continue
             seen.add(rid)
-            # Skip if this reply is also a top-level comment (微博API重复返回)
-            if top_cids and rid in top_cids:
-                continue
-            # Skip if this comment doesn't actually belong to the target root_comment
-            reply_root = str(rc.get("rootid", "") or rc.get("root_id", ""))
-            if reply_root and reply_root != str(cid):
-                continue
-            rc_user = rc.get("user") or rc.get("reply_user") or {}
+            rc_user = rc.get("user") or {}
             replies.append({
                 "cid": rid,
                 "uid": str(rc_user.get("id", "")),
                 "user": rc_user.get("screen_name", ""),
-                "text": strip_tags(rc.get("text_raw") or rc.get("text", "")),
+                "text": strip_tags(rc.get("text", "")),
                 "time": rc.get("created_at", ""),
-                "likes": rc.get("like_count", 0),
+                "likes": rc.get("like_counts", 0),
             })
-        new_max = data.get("max_id", 0)
-        if new_max == 0 or new_max == max_id:
+        # 分页：移动端10条/页，用 total_number 判断是否到底
+        total = d.get("total_number", 0) if isinstance(d, dict) else 0
+        if total and len(replies) >= total:
             break
-        max_id = new_max
+        if len(items) < 10:  # 不满一页说明到底了
+            break
         sleep_rand(*CMT_DELAY)
+    if replies:
+        log.info("    评论 %s: 抓取%d条回复 (total≈%d)", cid, len(replies), total or len(replies))
     return replies
 
 
@@ -278,10 +306,6 @@ def get_comments(uid, wid, cookie):
             inline_replies = c.get("comments", [])
             total_number = c.get("total_number", 0)
             for rc in inline_replies:
-                # 验证内嵌回复确实属于当前评论
-                rc_root = str(rc.get("rootid", "") or rc.get("root_id", "") or rc.get("reply_id", ""))
-                if rc_root and rc_root != cid:
-                    continue
                 rc_user = rc.get("user") or rc.get("reply_user") or {}
                 item["replies"].append({
                     "cid": str(rc.get("id", "")),

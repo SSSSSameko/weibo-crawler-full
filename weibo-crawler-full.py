@@ -201,6 +201,7 @@ def get_replies(uid, wid, cid, cookie, top_cids=None):
     replies = []
     seen = set()
     page = 0
+    empty_pages = 0  # 连续过滤后为空的页数
     while True:
         if _stop:
             break
@@ -227,10 +228,21 @@ def get_replies(uid, wid, cid, cookie, top_cids=None):
             items = d.get("data", [])
         if not items:
             break
+        added_this_page = 0
         for rc in items:
             rid = str(rc.get("id", ""))
             if rid in seen:
                 continue
+            # 关键修复：移动端API返回的是整条微博的所有回复，不是指定评论的回复
+            # 需要通过 reply_id/rootid 字段过滤，只保留属于目标评论(cid)的回复
+            reply_to = ""
+            for field in ("reply_id", "rootid", "comment_id"):
+                val = rc.get(field)
+                if val:
+                    reply_to = str(val)
+                    break
+            if reply_to and reply_to != cid:
+                continue  # 这条回复属于别的评论，跳过
             seen.add(rid)
             rc_user = rc.get("user") or {}
             replies.append({
@@ -241,11 +253,19 @@ def get_replies(uid, wid, cid, cookie, top_cids=None):
                 "time": rc.get("created_at", ""),
                 "likes": rc.get("like_counts", 0),
             })
-        # 分页：移动端10条/页，用 total_number 判断是否到底
+            added_this_page += 1
+        # 分页：移动端10条/页
         total = d.get("total_number", 0) if isinstance(d, dict) else 0
         if total and len(replies) >= total:
             break
         if len(items) < 10:  # 不满一页说明到底了
+            break
+        # 过滤后连续空页也说明已到底（total_number是整条微博的回复数，过滤后不适用）
+        if added_this_page == 0:
+            empty_pages += 1
+        else:
+            empty_pages = 0
+        if empty_pages >= 2:
             break
         sleep_rand(*CMT_DELAY)
     if replies:
@@ -341,8 +361,20 @@ def get_comments(uid, wid, cookie):
         before = len(c["replies"])
         c["replies"] = [r for r in c["replies"] if r["cid"] not in top_cids]
         deduped += before - len(c["replies"])
+    # 二级去重：同一条回复不应出现在多个父评论下（移动端API可能返回跨评论的回复）
+    seen_reply_ids = {}
+    for c in results:
+        unique = []
+        for r in c["replies"]:
+            rid = r["cid"]
+            if rid not in seen_reply_ids:
+                seen_reply_ids[rid] = c["cid"]
+                unique.append(r)
+            else:
+                deduped += 1
+        c["replies"] = unique
     if deduped:
-        log.info("  评论去重: 去掉%d条与顶级评论重复的回复", deduped)
+        log.info("  评论去重: 去掉%d条重复的回复", deduped)
     return results
 
 
@@ -547,3 +579,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

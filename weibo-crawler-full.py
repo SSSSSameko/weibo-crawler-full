@@ -261,7 +261,8 @@ def get_comments(uid, wid, cookie):
                              cid, len(inline_replies), len(extra), len(item["replies"]))
             results.append(item)
             new_count += 1
-        log.info("  评论第%d页: %d条 (新增%d 跳过%d 累计%d)", pg, len(cmts), new_count, dup_count, len(results))
+        log.info("  评论第%d页: %d条 (新增%d 跳过%d 累计%d) has_more=%s max_id=%s",
+                 pg, len(cmts), new_count, dup_count, len(results), data.get("has_more"), data.get("max_id"))
 
         new_max = data.get("max_id", 0)
         has_more = data.get("has_more", False)

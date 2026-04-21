@@ -168,7 +168,7 @@ def get_long(wid, cookie):
 
 
 # ---- 二级回复分页抓取 ----
-def get_replies(uid, wid, cid, cookie):
+def get_replies(uid, wid, cid, cookie, top_cids=None):
     replies = []
     seen = set()
     max_id = 0
@@ -201,6 +201,9 @@ def get_replies(uid, wid, cid, cookie):
             if rid in seen:
                 continue
             seen.add(rid)
+            # Skip if this reply is also a top-level comment (微博API重复返回)
+            if top_cids and rid in top_cids:
+                continue
             rc_user = rc.get("user") or rc.get("reply_user") or {}
             replies.append({
                 "cid": rid,
@@ -282,7 +285,7 @@ def get_comments(uid, wid, cookie):
                 })
             # 内嵌的不够，单独抓
             if total_number > len(inline_replies):
-                extra = get_replies(uid, wid, cid, cookie)
+                extra = get_replies(uid, wid, cid, cookie, top_cids=seen_cids)
                 existing_ids = {r["cid"] for r in item["replies"]}
                 for r in extra:
                     if r["cid"] not in existing_ids:
@@ -292,13 +295,22 @@ def get_comments(uid, wid, cookie):
                              cid, len(inline_replies), len(extra), len(item["replies"]))
             results.append(item)
             new_count += 1
-        log.info("  评论第%d页: %d条 (新增%d 跳过%d 累计%d) has_more=%s max_id=%s",
+log.info("  评论第%d页: %d条 (新增%d 跳过%d 累计%d) has_more=%s max_id=%s",
                  pg, len(cmts), new_count, dup_count, len(results), data.get("has_more"), data.get("max_id"))
 
         if new_count == 0:
             log.info("  评论已到末页 (本页全重复，累计%d条)", len(results))
             break
         sleep_rand(*CMT_DELAY)
+    # Dedup: remove replies whose CID is also a top-level comment
+    top_cids = {c["cid"] for c in results}
+    deduped = 0
+    for c in results:
+        before = len(c["replies"])
+        c["replies"] = [r for r in c["replies"] if r["cid"] not in top_cids]
+        deduped += before - len(c["replies"])
+    if deduped:
+        log.info("  评论去重: 去掉%d条与顶级评论重复的回复", deduped)
     return results
 
 

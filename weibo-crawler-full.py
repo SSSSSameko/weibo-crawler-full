@@ -15,7 +15,6 @@ SKIP_LONGTEXT = False
 
 PAGE_SIZE = 20
 CMT_PAGE_SIZE = 20
-MAX_CMT_PAGES = 30
 MAX_POSTS = 0  # 0=全量，>0=只抓前N条新微博
 
 DELAY = (3, 6)
@@ -141,7 +140,7 @@ def get_long(wid, cookie):
 def get_replies(uid, wid, cid, cookie):
     replies = []
     max_id = 0
-    for _ in range(MAX_CMT_PAGES):
+    while True:
         if _stop:
             break
         url = (f"https://weibo.com/ajax/statuses/buildComments"
@@ -179,7 +178,9 @@ def get_replies(uid, wid, cid, cookie):
 def get_comments(uid, wid, cookie):
     results = []
     max_id = 0
-    for pg in range(MAX_CMT_PAGES):
+    pg = 0
+    while True:
+        pg += 1
         if _stop:
             break
         url = (f"https://weibo.com/ajax/statuses/buildComments"

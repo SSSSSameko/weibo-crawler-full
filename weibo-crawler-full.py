@@ -139,6 +139,7 @@ def get_long(wid, cookie):
 # ---- 二级回复分页抓取 ----
 def get_replies(uid, wid, cid, cookie):
     replies = []
+    seen = set()
     max_id = 0
     while True:
         if _stop:
@@ -164,9 +165,13 @@ def get_replies(uid, wid, cid, cookie):
         if not items:
             break
         for rc in items:
-            rc_user = rc.get("user", {})
+            rid = str(rc.get("id", ""))
+            if rid in seen:
+                continue
+            seen.add(rid)
+            rc_user = rc.get("user") or rc.get("reply_user") or {}
             replies.append({
-                "cid": str(rc.get("id", "")),
+                "cid": rid,
                 "uid": str(rc_user.get("id", "")),
                 "user": rc_user.get("screen_name", ""),
                 "text": strip_tags(rc.get("text_raw") or rc.get("text", "")),
@@ -185,8 +190,8 @@ def get_replies(uid, wid, cid, cookie):
 # ---- 评论含二级----
 def get_comments(uid, wid, cookie):
     results = []
+    seen_cids = set()  # 一级评论去重
     max_id = 0
-    seen_ids = set()  # 访问过的max_id，防循环
     pg = 0
     while True:
         pg += 1
@@ -213,16 +218,17 @@ def get_comments(uid, wid, cookie):
         if not cmts:
             log.info("  评论第%d页: 空，结束", pg)
             break
-        # 调试：打印第一页API响应结构
-        if pg == 1:
-            log.info("[调试] has_more=%s max_id=%s", data.get("has_more"), data.get("max_id"))
-            log.info("[调试] 评论原始字段: %s", list(cmts[0].keys()))
-            log.info("[调试] user字段: %s", cmts[0].get("user"))
-            log.info("[调试] reply_user: %s", cmts[0].get("reply_user"))
+        new_count = 0
+        dup_count = 0
         for c in cmts:
+            cid = str(c.get("id", ""))
+            if cid in seen_cids:
+                dup_count += 1
+                continue
+            seen_cids.add(cid)
             cmt_user = c.get("user") or c.get("reply_user") or {}
             item = {
-                "cid": str(c.get("id", "")),
+                "cid": cid,
                 "uid": str(cmt_user.get("id", "")),
                 "user": cmt_user.get("screen_name", ""),
                 "text": strip_tags(c.get("text_raw") or c.get("text", "")),
@@ -232,7 +238,7 @@ def get_comments(uid, wid, cookie):
             }
             # 二级回复：先用内嵌的，如果还有更多就单独分页抓
             inline_replies = c.get("comments", [])
-            total_number = c.get("total_number", 0)  # 二级回复总数
+            total_number = c.get("total_number", 0)
             for rc in inline_replies:
                 rc_user = rc.get("user") or rc.get("reply_user") or {}
                 item["replies"].append({
@@ -245,26 +251,22 @@ def get_comments(uid, wid, cookie):
                 })
             # 内嵌的不够，单独抓
             if total_number > len(inline_replies):
-                extra = get_replies(uid, wid, item["cid"], cookie)
+                extra = get_replies(uid, wid, cid, cookie)
                 existing_ids = {r["cid"] for r in item["replies"]}
                 for r in extra:
                     if r["cid"] not in existing_ids:
                         item["replies"].append(r)
                 if extra:
-                    log.info("    评论 %s: 内嵌%d条 + 分页抓取%d条 = %d条回复",
-                             item["cid"], len(inline_replies), len(extra), len(item["replies"]))
+                    log.info("    评论 %s: 内嵌%d条 + 分页抓取%d条 = %d/%d条回复",
+                             cid, len(inline_replies), len(extra), len(item["replies"]), total_number)
             results.append(item)
-        log.info("  评论第%d页: %d条 (累计%d)", pg, len(cmts), len(results))
+            new_count += 1
+        log.info("  评论第%d页: %d条 (新增%d 跳过%d 累计%d)", pg, len(cmts), new_count, dup_count, len(results))
 
         new_max = data.get("max_id", 0)
         has_more = data.get("has_more", False)
         if not has_more or new_max == 0 or new_max == max_id:
             break
-        # 防循环：max_id已经出现过
-        if new_max in seen_ids:
-            log.info("  max_id %s 重复，结束", new_max)
-            break
-        seen_ids.add(new_max)
         max_id = new_max
         sleep_rand(*CMT_DELAY)
     return results

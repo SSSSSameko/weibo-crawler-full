@@ -149,7 +149,8 @@ def get_replies(uid, wid, cid, cookie):
                f"&comment_type=0&count={CMT_PAGE_SIZE}&uid={uid}"
                f"&root_comment={cid}")
         if max_id:
-            url += f"&max_id={max_id}"
+            url += f"&max_id={max_id}&end_id={max_id}"
+        log.info("  评论URL: %s", url)
         data, code = fetch(url, cookie)
         if code == 403:
             log.error("评论403，cookie过期")
@@ -201,7 +202,8 @@ def get_comments(uid, wid, cookie):
                f"&is_show_cmt_num=0&comment_type=0"
                f"&count={CMT_PAGE_SIZE}&uid={uid}")
         if max_id:
-            url += f"&max_id={max_id}"
+            url += f"&max_id={max_id}&end_id={max_id}"
+        log.info("  评论URL: %s", url)
         data, code = fetch(url, cookie)
         if code == 403:
             log.error("评论403，cookie过期")
@@ -215,7 +217,9 @@ def get_comments(uid, wid, cookie):
                 break
         cmts = (data or {}).get("data", [])
         if not cmts:
-            log.info("  评论第%d页: 空，结束", pg)
+            log.info("  评论第%d页: 空，结束 (data keys: %s)", pg, list((data or {}).keys()))
+            if data:
+                log.info("  原始data: %s", json.dumps(data, ensure_ascii=False)[:500])
             break
         new_count = 0
         dup_count = 0

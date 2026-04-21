@@ -195,8 +195,13 @@ def get_comments(uid, wid, cookie):
         cmts = (data or {}).get("data", [])
         if not cmts:
             break
+        # 调试：打印第一条评论的原始结构
+        if pg == 0 and cmts:
+            log.info("[调试] 评论原始字段: %s", list(cmts[0].keys()))
+            log.info("[调试] user字段: %s", cmts[0].get("user"))
+            log.info("[调试] reply_comment: %s", cmts[0].get("reply_comment"))
         for c in cmts:
-            cmt_user = c.get("user", {})
+            cmt_user = c.get("user") or c.get("reply_user") or {}
             item = {
                 "cid": str(c.get("id", "")),
                 "uid": str(cmt_user.get("id", "")),
@@ -210,7 +215,7 @@ def get_comments(uid, wid, cookie):
             inline_replies = c.get("comments", [])
             total_number = c.get("total_number", 0)  # 二级回复总数
             for rc in inline_replies:
-                rc_user = rc.get("user", {})
+                rc_user = rc.get("user") or rc.get("reply_user") or {}
                 item["replies"].append({
                     "cid": str(rc.get("id", "")),
                     "uid": str(rc_user.get("id", "")),

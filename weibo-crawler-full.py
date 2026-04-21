@@ -264,9 +264,8 @@ def get_comments(uid, wid, cookie):
         log.info("  评论第%d页: %d条 (新增%d 跳过%d 累计%d) has_more=%s max_id=%s",
                  pg, len(cmts), new_count, dup_count, len(results), data.get("has_more"), data.get("max_id"))
 
-        total_num = data.get("total_number", 0)
-        if total_num and pg * CMT_PAGE_SIZE >= total_num:
-            log.info("  评论已到末页 (total_number=%d, 已抓%d)", total_num, pg * CMT_PAGE_SIZE)
+        if new_count == 0:
+            log.info("  评论已到末页 (本页全重复，累计%d条)", len(results))
             break
         sleep_rand(*CMT_DELAY)
     return results

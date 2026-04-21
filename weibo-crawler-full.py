@@ -165,8 +165,10 @@ def get_replies(uid, wid, cid, cookie):
                 "time": rc.get("created_at", ""),
                 "likes": rc.get("like_count", 0),
             })
-        has_more = data.get("has_more", False)
+        has_more = data.get("has_more")
         new_max = data.get("max_id", 0)
+        if has_more is None:
+            has_more = bool(new_max)
         if not has_more or new_max == 0 or new_max == max_id:
             break
         max_id = new_max
@@ -237,8 +239,11 @@ def get_comments(uid, wid, cookie):
                     log.info("    评论 %s: 内嵌%d条 + 分页抓取%d条 = %d条回复",
                              item["cid"], len(inline_replies), len(extra), len(item["replies"]))
             results.append(item)
-        has_more = data.get("has_more", False)
+        has_more = data.get("has_more")
         new_max = data.get("max_id", 0)
+        # is_mix=1 模式下 has_more 可能为 None，有 max_id 就继续翻
+        if has_more is None:
+            has_more = bool(new_max)
         if not has_more or new_max == 0 or new_max == max_id:
             break
         max_id = new_max

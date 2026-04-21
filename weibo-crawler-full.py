@@ -173,10 +173,8 @@ def get_replies(uid, wid, cid, cookie):
                 "time": rc.get("created_at", ""),
                 "likes": rc.get("like_count", 0),
             })
-        has_more = data.get("has_more")
+        has_more = data.get("has_more", False)
         new_max = data.get("max_id", 0)
-        if has_more is None:
-            has_more = bool(new_max)
         if not has_more or new_max == 0 or new_max == max_id:
             break
         max_id = new_max
@@ -195,7 +193,7 @@ def get_comments(uid, wid, cookie):
         if _stop:
             break
         url = (f"https://weibo.com/ajax/statuses/buildComments"
-               f"?is_show_bulletin=2&is_mix=1&id={wid}"
+               f"?is_show_bulletin=2&is_mix=0&id={wid}"
                f"&is_show_cmt_num=0&comment_type=0"
                f"&count={CMT_PAGE_SIZE}&uid={uid}")
         if max_id:
@@ -259,9 +257,8 @@ def get_comments(uid, wid, cookie):
         log.info("  评论第%d页: %d条 (累计%d)", pg, len(cmts), len(results))
 
         new_max = data.get("max_id", 0)
-        has_more = data.get("has_more")
-        # has_more明确为False，或max_id无效，或max_id重复 → 停
-        if has_more is False or new_max == 0 or new_max == max_id:
+        has_more = data.get("has_more", False)
+        if not has_more or new_max == 0 or new_max == max_id:
             break
         # 防循环：max_id已经出现过
         if new_max in seen_ids:

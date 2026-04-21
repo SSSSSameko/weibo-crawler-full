@@ -204,6 +204,10 @@ def get_replies(uid, wid, cid, cookie, top_cids=None):
             # Skip if this reply is also a top-level comment (微博API重复返回)
             if top_cids and rid in top_cids:
                 continue
+            # Skip if this comment doesn't actually belong to the target root_comment
+            reply_root = str(rc.get("rootid", "") or rc.get("root_id", ""))
+            if reply_root and reply_root != str(cid):
+                continue
             rc_user = rc.get("user") or rc.get("reply_user") or {}
             replies.append({
                 "cid": rid,
@@ -274,6 +278,10 @@ def get_comments(uid, wid, cookie):
             inline_replies = c.get("comments", [])
             total_number = c.get("total_number", 0)
             for rc in inline_replies:
+                # 验证内嵌回复确实属于当前评论
+                rc_root = str(rc.get("rootid", "") or rc.get("root_id", "") or rc.get("reply_id", ""))
+                if rc_root and rc_root != cid:
+                    continue
                 rc_user = rc.get("user") or rc.get("reply_user") or {}
                 item["replies"].append({
                     "cid": str(rc.get("id", "")),

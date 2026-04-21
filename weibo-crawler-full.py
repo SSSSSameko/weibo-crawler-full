@@ -137,6 +137,44 @@ def get_long(wid, cookie):
     return None
 
 
+# ---- 二级回复分页抓取 ----
+def get_replies(uid, wid, cid, cookie):
+    replies = []
+    max_id = 0
+    for _ in range(MAX_CMT_PAGES):
+        if _stop:
+            break
+        url = (f"https://weibo.com/ajax/statuses/buildComments"
+               f"?is_show_bulletin=2&is_mix=0&id={wid}"
+               f"&comment_type=0&count={CMT_PAGE_SIZE}&uid={uid}"
+               f"&root_comment={cid}")
+        if max_id:
+            url += f"&max_id={max_id}"
+        data, code = fetch(url, cookie)
+        if code != 200:
+            break
+        items = (data or {}).get("data", [])
+        if not items:
+            break
+        for rc in items:
+            rc_user = rc.get("user", {})
+            replies.append({
+                "cid": str(rc.get("id", "")),
+                "uid": str(rc_user.get("id", "")),
+                "user": rc_user.get("screen_name", ""),
+                "text": strip_tags(rc.get("text_raw") or rc.get("text", "")),
+                "time": rc.get("created_at", ""),
+                "likes": rc.get("like_count", 0),
+            })
+        has_more = data.get("has_more", False)
+        new_max = data.get("max_id", 0)
+        if not has_more or new_max == 0 or new_max == max_id:
+            break
+        max_id = new_max
+        sleep_rand(*CMT_DELAY)
+    return replies
+
+
 # ---- 评论含二级----
 def get_comments(uid, wid, cookie):
     results = []
@@ -145,7 +183,7 @@ def get_comments(uid, wid, cookie):
         if _stop:
             break
         url = (f"https://weibo.com/ajax/statuses/buildComments"
-               f"?is_show_bulletin=2&is_mix=0&id={wid}"
+               f"?is_show_bulletin=2&is_mix=1&id={wid}"
                f"&is_show_cmt_num=0&comment_type=0"
                f"&count={CMT_PAGE_SIZE}&uid={uid}")
         if max_id:
@@ -167,7 +205,10 @@ def get_comments(uid, wid, cookie):
                 "likes": c.get("like_counts", 0),
                 "replies": [],
             }
-            for rc in c.get("comments", []):
+            # 二级回复：先用内嵌的，如果还有更多就单独分页抓
+            inline_replies = c.get("comments", [])
+            total_number = c.get("total_number", 0)  # 二级回复总数
+            for rc in inline_replies:
                 rc_user = rc.get("user", {})
                 item["replies"].append({
                     "cid": str(rc.get("id", "")),
@@ -177,6 +218,17 @@ def get_comments(uid, wid, cookie):
                     "time": rc.get("created_at", ""),
                     "likes": rc.get("like_count", 0),
                 })
+            # 内嵌的不够，单独抓
+            if total_number > len(inline_replies):
+                extra = get_replies(uid, wid, item["cid"], cookie)
+                # 去重（内嵌的可能和分页的重复）
+                existing_ids = {r["cid"] for r in item["replies"]}
+                for r in extra:
+                    if r["cid"] not in existing_ids:
+                        item["replies"].append(r)
+                if extra:
+                    log.info("    评论 %s: 内嵌%d条 + 分页抓取%d条 = %d条回复",
+                             item["cid"], len(inline_replies), len(extra), len(item["replies"]))
             results.append(item)
         has_more = data.get("has_more", False)
         new_max = data.get("max_id", 0)

@@ -6,19 +6,19 @@ from datetime import datetime
 from pathlib import Path
 
 # ---- 配置 ----
-TARGET_UID = ""
-OUTPUT_DIR = "weibo_data"
-COOKIE = ''
+TARGET_UID = ""                # 目标用户 UID（必填）
+COOKIE = ''                    # 微博 Cookie（必填，浏览器 F12 → Network → 复制 Request Headers 的 Cookie）
+OUTPUT_DIR = "weibo_data"      # 输出目录
 
-SKIP_COMMENTS = False
-SKIP_LONGTEXT = False
+SKIP_COMMENTS = False          # True = 跳过评论抓取
+SKIP_LONGTEXT = False          # True = 跳过长微博展开
 
-PAGE_SIZE = 20
-CMT_PAGE_SIZE = 20
-MAX_POSTS = 0  # 0=全量，>0=只抓前N条新微博
+PAGE_SIZE = 20                 # 每页拉几条微博（API上限约20-50，改大不一定生效）
+CMT_PAGE_SIZE = 20             # 每页拉几条评论
+MAX_POSTS = 0                  # 0=全量抓取，>0=只抓前N条新微博（配合断点续传=增量更新）
 
-DELAY = (3, 6)
-CMT_DELAY = (2, 4)
+DELAY = (3, 6)                 # 微博翻页间隔，随机秒数范围
+CMT_DELAY = (2, 4)             # 评论翻页间隔，随机秒数范围
 
 # ---- logging ----
 logging.basicConfig(

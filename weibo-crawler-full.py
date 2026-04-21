@@ -93,8 +93,9 @@ def fetch(url, cookie, timeout=30):
 # ---- 断点：从已有 JSONL 提取已抓 ID ----
 def load_done(path):
     done = set()
+    need_cmt = {}  # wid -> (uid, True) for posts needing comment backfill
     if not path.exists():
-        return done
+        return done, need_cmt
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -102,12 +103,42 @@ def load_done(path):
                 continue
             try:
                 obj = json.loads(line)
-                if "id" in obj:
-                    done.add(obj["id"])
+                if "id" not in obj:
+                    continue
+                wid = obj["id"]
+                done.add(wid)
+                # Check if comments need backfill
+                comments = obj.get("comments", [])
+                expected = obj.get("comments_count", 0)
+                if expected > 0 and len(complies_with_expected(comments, expected)):
+                    need_cmt[wid] = obj
             except json.JSONDecodeError:
                 pass
-    log.info("已有 %d 条，跳过", len(done))
-    return done
+    log.info("已有 %d 条", len(done))
+    if need_cmt:
+        log.info("其中 %d 条评论不完整，需要补抓", len(need_cmt))
+    return done, need_cmt
+
+
+def complies_with_expected(comments, expected):
+    """Return list of comments that appear to need reply backfill."""
+    if not comments:
+        return []
+    incomplete = []
+    has_total_number = "total_number" in comments[0] if comments else False
+    for c in comments:
+        total = c.get("total_number", 0)
+        replies = c.get("replies", [])
+        # If total_number says more replies exist than we have
+        if total > 0 and len(replies) < total:
+            incomplete.append(c)
+    # Old data without total_number field: if ANY comment has 0 replies,
+    # assume the data might be incomplete and reprocess
+    if not has_total_number and expected > 0:
+        zero_reply = [c for c in comments if len(c.get("replies", [])) == 0]
+        if zero_reply:
+            return zero_reply  # Return non-empty to trigger backfill
+    return incomplete
 
 
 # ---- 微博分页 ----
@@ -309,7 +340,7 @@ def main():
     txt_p = out / f"weibo_{TARGET_UID}.txt"
     meta_p = out / f"weibo_{TARGET_UID}_meta.json"
 
-    done = load_done(jsonl_p)
+    done, need_cmt = load_done(jsonl_p)
 
     # 拉用户信息
     log.info("拉用户信息...")
@@ -360,6 +391,25 @@ def main():
             if not wid:
                 continue
             if wid in done:
+                # Check if this post needs comment backfill
+                if wid in need_cmt and not SKIP_COMMENTS:
+                    old_item = need_cmt[wid]
+                    old_comments = old_item.get("comments", [])
+                    log.info("  补抓评论 %s (已有%d条，部分回复不完整)", wid, len(old_comments))
+                    try:
+                        cmts = get_comments(TARGET_UID, wid, cookie)
+                        # Merge: prefer new comments, but keep old ones not in new set
+                        new_cids = {c["cid"] for c in cmts}
+                        merged = list(cmts)
+                        for oc in old_comments:
+                            if oc["cid"] not in new_cids:
+                                merged.append(oc)
+                        old_item["comments"] = merged
+                        dump_jsonl(jsonl_p, old_item)
+                        total_cmt += len(merged)
+                        log.info("  补完 %s: %d条评论 (新增%d条)", wid, len(merged), len(merged) - len(old_comments))
+                    except Exception as e:
+                        log.error("  补抓 %s 失败: %s", wid, e)
                 skipped += 1
                 continue
 

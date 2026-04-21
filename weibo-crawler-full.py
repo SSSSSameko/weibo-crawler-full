@@ -180,6 +180,7 @@ def get_replies(uid, wid, cid, cookie):
 def get_comments(uid, wid, cookie):
     results = []
     max_id = 0
+    seen_ids = set()  # 访问过的max_id，防循环
     pg = 0
     while True:
         pg += 1
@@ -196,9 +197,10 @@ def get_comments(uid, wid, cookie):
             break
         cmts = (data or {}).get("data", [])
         if not cmts:
+            log.info("  评论第%d页: 空，结束", pg)
             break
-        # 调试：打印第一条API响应结构
-        if pg == 1 and cmts:
+        # 调试：打印第一页API响应结构
+        if pg == 1:
             log.info("[调试] has_more=%s max_id=%s", data.get("has_more"), data.get("max_id"))
             log.info("[调试] 评论原始字段: %s", list(cmts[0].keys()))
             log.info("[调试] user字段: %s", cmts[0].get("user"))
@@ -230,7 +232,6 @@ def get_comments(uid, wid, cookie):
             # 内嵌的不够，单独抓
             if total_number > len(inline_replies):
                 extra = get_replies(uid, wid, item["cid"], cookie)
-                # 去重（内嵌的可能和分页的重复）
                 existing_ids = {r["cid"] for r in item["replies"]}
                 for r in extra:
                     if r["cid"] not in existing_ids:
@@ -239,13 +240,18 @@ def get_comments(uid, wid, cookie):
                     log.info("    评论 %s: 内嵌%d条 + 分页抓取%d条 = %d条回复",
                              item["cid"], len(inline_replies), len(extra), len(item["replies"]))
             results.append(item)
-        has_more = data.get("has_more")
+        log.info("  评论第%d页: %d条 (累计%d)", pg, len(cmts), len(results))
+
         new_max = data.get("max_id", 0)
-        # is_mix=1 模式下 has_more 可能为 None，有 max_id 就继续翻
-        if has_more is None:
-            has_more = bool(new_max)
-        if not has_more or new_max == 0 or new_max == max_id:
+        has_more = data.get("has_more")
+        # has_more明确为False，或max_id无效，或max_id重复 → 停
+        if has_more is False or new_max == 0 or new_max == max_id:
             break
+        # 防循环：max_id已经出现过
+        if new_max in seen_ids:
+            log.info("  max_id %s 重复，结束", new_max)
+            break
+        seen_ids.add(new_max)
         max_id = new_max
         sleep_rand(*CMT_DELAY)
     return results

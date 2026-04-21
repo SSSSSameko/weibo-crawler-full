@@ -178,9 +178,8 @@ def get_replies(uid, wid, cid, cookie):
                 "time": rc.get("created_at", ""),
                 "likes": rc.get("like_count", 0),
             })
-        has_more = data.get("has_more", False)
         new_max = data.get("max_id", 0)
-        if not has_more or new_max == 0 or new_max == max_id:
+        if new_max == 0 or new_max == max_id:
             break
         max_id = new_max
         sleep_rand(*CMT_DELAY)
@@ -265,8 +264,7 @@ def get_comments(uid, wid, cookie):
                  pg, len(cmts), new_count, dup_count, len(results), data.get("has_more"), data.get("max_id"))
 
         new_max = data.get("max_id", 0)
-        has_more = data.get("has_more", False)
-        if not has_more or new_max == 0 or new_max == max_id:
+        if new_max == 0 or new_max == max_id:
             break
         max_id = new_max
         sleep_rand(*CMT_DELAY)

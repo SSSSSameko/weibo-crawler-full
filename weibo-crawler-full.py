@@ -16,6 +16,8 @@ SKIP_LONGTEXT = False
 PAGE_SIZE = 20
 CMT_PAGE_SIZE = 20
 MAX_CMT_PAGES = 30
+MAX_POSTS = 0  # 0=全量，>0=只抓前N条新微博
+
 DELAY = (3, 6)
 CMT_DELAY = (2, 4)
 
@@ -155,18 +157,22 @@ def get_comments(uid, wid, cookie):
         if not cmts:
             break
         for c in cmts:
+            cmt_user = c.get("user", {})
             item = {
                 "cid": str(c.get("id", "")),
-                "user": c.get("user", {}).get("screen_name", ""),
+                "uid": str(cmt_user.get("id", "")),
+                "user": cmt_user.get("screen_name", ""),
                 "text": strip_tags(c.get("text_raw") or c.get("text", "")),
                 "time": c.get("created_at", ""),
                 "likes": c.get("like_counts", 0),
                 "replies": [],
             }
             for rc in c.get("comments", []):
+                rc_user = rc.get("user", {})
                 item["replies"].append({
                     "cid": str(rc.get("id", "")),
-                    "user": rc.get("user", {}).get("screen_name", ""),
+                    "uid": str(rc_user.get("id", "")),
+                    "user": rc_user.get("screen_name", ""),
                     "text": strip_tags(rc.get("text_raw") or rc.get("text", "")),
                     "time": rc.get("created_at", ""),
                     "likes": rc.get("like_count", 0),
@@ -192,16 +198,17 @@ def dump_jsonl(path, item):
 def dump_txt(path, idx, w):
     with open(path, "a", encoding="utf-8") as f:
         f.write(f"--- #{idx} [{w['id']}] ---\n")
+        f.write(f"作者: {w.get('author_name','')} (uid:{w.get('author_uid','')})\n")
         f.write(f"时间: {w['created_at']}  来源: {w['source']}\n")
         f.write(f"赞:{w['attitudes_count']} 评:{w['comments_count']} 转:{w['reposts_count']}\n")
         f.write(w.get("full_text") or w["text_raw"] + "\n")
         rt = w.get("retweeted_status")
         if rt:
-            f.write(f"转发 @{rt['user']}: {rt['text_raw']}\n")
+            f.write(f"转发 @{rt['user']} (uid:{rt.get('user_uid','')}): {rt['text_raw']}\n")
         for c in w.get("comments", []):
-            f.write(f"  [{c['user']}]: {c['text']}\n")
+            f.write(f"  [{c['user']} (uid:{c.get('uid','')})]: {c['text']}\n")
             for r in c.get("replies", []):
-                f.write(f"    ↳ [{r['user']}]: {r['text']}\n")
+                f.write(f"    ↳ [{r['user']} (uid:{r.get('uid','')})]: {r['text']}\n")
         f.write("\n" + "-" * 60 + "\n\n")
         f.flush()
         os.fsync(f.fileno())
@@ -272,8 +279,11 @@ def main():
                 continue
 
             try:
+                author_info = w.get("user", {})
                 item = {
                     "id": wid,
+                    "author_uid": str(author_info.get("id", "")),
+                    "author_name": author_info.get("screen_name", ""),
                     "text_raw": strip_tags(w.get("text_raw") or w.get("text", "")),
                     "created_at": w.get("created_at", ""),
                     "source": strip_tags(w.get("source", "")),
@@ -288,10 +298,12 @@ def main():
                 }
                 rt = w.get("retweeted_status")
                 if rt:
+                    rt_user = rt.get("user", {})
                     item["retweeted_status"] = {
                         "id": str(rt.get("id", "")),
                         "text_raw": strip_tags(rt.get("text_raw") or rt.get("text", "")),
-                        "user": rt.get("user", {}).get("screen_name", ""),
+                        "user_uid": str(rt_user.get("id", "")),
+                        "user": rt_user.get("screen_name", ""),
                     }
 
                 # 长微博展开
@@ -315,6 +327,11 @@ def main():
                 done.add(wid)
                 new += 1
 
+                if MAX_POSTS > 0 and new >= MAX_POSTS:
+                    log.info("已抓 %d 条，达到 MAX_POSTS(%d) 上限", new, MAX_POSTS)
+                    _stop = True
+                    break
+
                 if new % 10 == 0:
                     log.info("  已落盘 %d 条", new)
 
@@ -329,6 +346,7 @@ def main():
         "statuses": user.get("statuses_count", 0),
         "desc": user.get("description", ""),
         "verified": user.get("verified_reason", ""),
+        "max_posts": MAX_POSTS,
         "end_time": f"{datetime.now():%Y-%m-%d %H:%M:%S}",
         "total": new + skipped,
         "new": new,

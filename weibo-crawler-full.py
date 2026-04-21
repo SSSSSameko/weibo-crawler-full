@@ -191,7 +191,6 @@ def get_replies(uid, wid, cid, cookie):
 def get_comments(uid, wid, cookie):
     results = []
     seen_cids = set()  # 一级评论去重
-    max_id = 0
     pg = 0
     while True:
         pg += 1
@@ -200,9 +199,8 @@ def get_comments(uid, wid, cookie):
         url = (f"https://weibo.com/ajax/statuses/buildComments"
                f"?is_show_bulletin=2&is_mix=0&id={wid}"
                f"&is_show_cmt_num=0&comment_type=0"
-               f"&count={CMT_PAGE_SIZE}&uid={uid}")
-        if max_id:
-            url += f"&max_id={max_id}&end_id={max_id}"
+               f"&count={CMT_PAGE_SIZE}&uid={uid}"
+               f"&page={pg}")
         log.info("  评论URL: %s", url)
         data, code = fetch(url, cookie)
         if code == 403:
@@ -217,9 +215,8 @@ def get_comments(uid, wid, cookie):
                 break
         cmts = (data or {}).get("data", [])
         if not cmts:
-            log.info("  评论第%d页: 空，结束 (data keys: %s)", pg, list((data or {}).keys()))
-            if data:
-                log.info("  原始data: %s", json.dumps(data, ensure_ascii=False)[:500])
+            log.info("  评论第%d页: 空，结束 (data keys: %s total_number=%s)",
+                     pg, list((data or {}).keys()), (data or {}).get("total_number"))
             break
         new_count = 0
         dup_count = 0
@@ -267,10 +264,10 @@ def get_comments(uid, wid, cookie):
         log.info("  评论第%d页: %d条 (新增%d 跳过%d 累计%d) has_more=%s max_id=%s",
                  pg, len(cmts), new_count, dup_count, len(results), data.get("has_more"), data.get("max_id"))
 
-        new_max = data.get("max_id", 0)
-        if new_max == 0 or new_max == max_id:
+        total_num = data.get("total_number", 0)
+        if total_num and pg * CMT_PAGE_SIZE >= total_num:
+            log.info("  评论已到末页 (total_number=%d, 已抓%d)", total_num, pg * CMT_PAGE_SIZE)
             break
-        max_id = new_max
         sleep_rand(*CMT_DELAY)
     return results
 

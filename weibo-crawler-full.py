@@ -257,8 +257,8 @@ def get_comments(uid, wid, cookie):
                     if r["cid"] not in existing_ids:
                         item["replies"].append(r)
                 if extra:
-                    log.info("    评论 %s: 内嵌%d条 + 分页抓取%d条 = %d/%d条回复",
-                             cid, len(inline_replies), len(extra), len(item["replies"]), total_number)
+                    log.info("    评论 %s: 内嵌%d条 + 分页抓取%d条 = 共%d条回复",
+                             cid, len(inline_replies), len(extra), len(item["replies"]))
             results.append(item)
             new_count += 1
         log.info("  评论第%d页: %d条 (新增%d 跳过%d 累计%d)", pg, len(cmts), new_count, dup_count, len(results))

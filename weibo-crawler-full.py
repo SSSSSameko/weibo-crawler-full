@@ -216,6 +216,7 @@ def dump_txt(path, idx, w):
 
 # ---- main ----
 def main():
+    global _stop
     cookie = COOKIE
     out = Path(OUTPUT_DIR)
     out.mkdir(parents=True, exist_ok=True)
